@@ -9,29 +9,11 @@ import { PROMPT_VERSION, type Cell } from "./extract";
  * are cached for free the moment the first visitor runs them — no separate warm-up job,
  * no cache invalidation logic beyond bumping PROMPT_VERSION.
  *
- * Schema (run once in the Supabase SQL editor):
+ * Schema lives in supabase/migrations/ — apply with `supabase db push`, not by hand.
+ * RLS is enabled with no policies, so this module must use SUPABASE_SECRET_KEY.
  *
- *   create table extraction_runs (
- *     id           uuid primary key default gen_random_uuid(),
- *     cache_key    text not null unique,
- *     model        text not null,
- *     sample_id    text,
- *     byo_key      boolean not null default false,
- *     field_count  int not null,
- *     doc_chars    int not null,
- *     cells        jsonb not null,
- *     schema_spec  jsonb not null,
- *     usage        jsonb,
- *     duration_ms  int,
- *     created_at   timestamptz not null default now()
- *   );
- *   create index on extraction_runs (created_at desc);
- *   alter table extraction_runs enable row level security;
- *   -- no policies: service role only. The route is the sole reader/writer.
- *
- * Retention, so a public demo doesn't accumulate strangers' pasted text forever
- * (pg_cron, or a Vercel cron hitting a small route):
- *   delete from extraction_runs where created_at < now() - interval '30 days';
+ * Retention runs as a pg_cron job (`prune-demo-data`, daily 03:17 UTC): runs older than
+ * 30 days are deleted unless they carry a sample_id, so the sample cache stays warm.
  *
  * Note we store `cells` but not the document text. The client already has the text and
  * sends it back for re-render; spans are meaningless without it, so nothing to reconstruct
@@ -42,7 +24,10 @@ let client: SupabaseClient | null = null;
 
 function supabase(): SupabaseClient | null {
   const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_PUBLISHABLE_KEY;
+  // Must be the secret key. The publishable key is the anon role and cannot bypass RLS,
+  // so with deny-all policies every read returns empty and every write is rejected —
+  // silently, because both call sites swallow the error and degrade to "no cache".
+  const key = process.env.SUPABASE_SECRET_KEY;
 
   if (!url || !key) return null;
   client ??= createClient(url, key, { auth: { persistSession: false } });
@@ -119,5 +104,16 @@ export async function saveRun(input: {
     console.error("saveRun failed", error.message);
     return null;
   }
-  return data?.id ?? null;
+  if (data?.id) return data.id;
+
+  // ON CONFLICT DO NOTHING returns no row, so a race with an identical concurrent request
+  // lands here. The winning row is the one we want; read its id back rather than
+  // handing the client a null runId.
+  const { data: existing } = await db
+    .from("extraction_runs")
+    .select("id")
+    .eq("cache_key", input.cacheKey)
+    .maybeSingle();
+
+  return existing?.id ?? null;
 }
