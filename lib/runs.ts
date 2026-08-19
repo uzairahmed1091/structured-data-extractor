@@ -42,7 +42,8 @@ let client: SupabaseClient | null = null;
 
 function supabase(): SupabaseClient | null {
   const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const key = process.env.SUPABASE_PUBLISHABLE_KEY;
+
   if (!url || !key) return null;
   client ??= createClient(url, key, { auth: { persistSession: false } });
   return client;
