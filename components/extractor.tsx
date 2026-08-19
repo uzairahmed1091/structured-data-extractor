@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { SchemaBuilder } from "./schema-builder";
 import { ResultsTable, StatsBar } from "./results-table";
+import { SourceView } from "./source-view";
 import { DEFAULT_SAMPLE, SAMPLES } from "@/lib/samples";
 import { MAX_TEXT_CHARS, type Cell } from "@/lib/extract";
 import type { FieldSpec } from "@/lib/schema";
@@ -20,7 +21,24 @@ export function Extractor() {
   const [apiKey, setApiKey] = useState("");
   const [showKeyInput, setShowKeyInput] = useState(false);
   const [run, setRun] = useState<RunState>({ status: "idle" });
-  const [activeKey, setActiveKey] = useState<string | null>(null);
+  // Hover is a preview, a click pins. Pin wins so the highlight survives moving the mouse
+  // away from the row to look at the document.
+  const [hoverKey, setHoverKey] = useState<string | null>(null);
+  const [pinnedKey, setPinnedKey] = useState<string | null>(null);
+  const activeKey = pinnedKey ?? hoverKey;
+
+  /**
+   * The text the highlighted view renders must be the exact string that was extracted
+   * from, not whatever is in the editor now — cell.span offsets index into it. Captured
+   * at request time and held for the life of the run.
+   */
+  const [extractedText, setExtractedText] = useState("");
+
+  const reset = () => {
+    setRun({ status: "idle" });
+    setPinnedKey(null);
+    setHoverKey(null);
+  };
 
   const loadSample = (id: string) => {
     const sample = SAMPLES.find((s) => s.id === id);
@@ -28,10 +46,14 @@ export function Extractor() {
     setSampleId(sample.id);
     setText(sample.text);
     setFields(sample.fields);
-    setRun({ status: "idle" });
+    reset();
   };
 
   const extract = async () => {
+    const submitted = text;
+    setExtractedText(submitted);
+    setPinnedKey(null);
+    setHoverKey(null);
     setRun({ status: "running" });
     try {
       const res = await fetch("/api/extract", {
@@ -40,7 +62,11 @@ export function Extractor() {
           "content-type": "application/json",
           ...(apiKey ? { "x-openai-key": apiKey } : {}),
         },
-        body: JSON.stringify({ text, fields, sampleId: sampleId ?? undefined }),
+        body: JSON.stringify({
+          text: submitted,
+          fields,
+          sampleId: sampleId ?? undefined,
+        }),
       });
 
       const data = await res.json();
@@ -63,46 +89,73 @@ export function Extractor() {
   const canRun =
     run.status !== "running" && text.trim().length > 0 && fields.some((f) => f.label);
 
+  const done = run.status === "done" ? run : null;
+  const showCited = done !== null;
+  const citedCount = done?.cells.filter((c) => c.status === "found" && c.span).length ?? 0;
+
   return (
     <div className="mx-auto grid max-w-[1400px] gap-4 p-4 lg:grid-cols-[1.1fr_1fr] lg:p-6">
-      {/* Source pane. Evening 2 swaps this textarea for a highlight overlay driven by
-          cell.span — segmentByCitations() in lib/locate.ts already returns the segments. */}
+      {/* Source pane. Editable until a run lands, then swaps to the cited view so the
+          highlights sit on the exact string the model saw. */}
       <section className="flex min-h-[60vh] flex-col rounded-sm border border-rule bg-paper">
         <header className="flex flex-wrap items-center gap-2 border-b border-rule px-4 py-3">
           <h2 className="text-sm font-semibold tracking-tight">Document</h2>
           <span className="eyebrow text-ink-3">
-            {text.length.toLocaleString()} / {MAX_TEXT_CHARS.toLocaleString()} chars
+            {showCited
+              ? `${citedCount} cited ${citedCount === 1 ? "span" : "spans"}`
+              : `${text.length.toLocaleString()} / ${MAX_TEXT_CHARS.toLocaleString()} chars`}
           </span>
           <div className="ml-auto flex items-center gap-2">
-            <select
-              className="rounded-sm border border-rule px-2 py-1 text-xs"
-              value={sampleId ?? ""}
-              onChange={(e) =>
-                e.target.value ? loadSample(e.target.value) : setSampleId(null)
-              }
-            >
-              <option value="">Own text</option>
-              {SAMPLES.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
+            {showCited ? (
+              <button
+                type="button"
+                onClick={reset}
+                className="rounded-sm border border-rule px-2 py-1 text-xs hover:border-ink"
+              >
+                Edit text
+              </button>
+            ) : (
+              <select
+                className="rounded-sm border border-rule px-2 py-1 text-xs"
+                value={sampleId ?? ""}
+                onChange={(e) =>
+                  e.target.value ? loadSample(e.target.value) : setSampleId(null)
+                }
+              >
+                <option value="">Own text</option>
+                {SAMPLES.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </header>
 
-        <textarea
-          value={text}
-          maxLength={MAX_TEXT_CHARS}
-          onChange={(e) => {
-            setText(e.target.value);
-            setSampleId(null);
-            setRun({ status: "idle" });
-          }}
-          spellCheck={false}
-          placeholder="Paste a contract, invoice, report — anything with facts in it."
-          className="flex-1 resize-none bg-transparent p-4 font-mono text-[13px] leading-relaxed text-ink placeholder:text-ink-3 focus:outline-none"
-        />
+        {done ? (
+          <SourceView
+            text={extractedText}
+            cells={done.cells}
+            activeKey={activeKey}
+            pinnedKey={pinnedKey}
+            onHoverKey={setHoverKey}
+            onSelectKey={setPinnedKey}
+          />
+        ) : (
+          <textarea
+            value={text}
+            maxLength={MAX_TEXT_CHARS}
+            onChange={(e) => {
+              setText(e.target.value);
+              setSampleId(null);
+              reset();
+            }}
+            spellCheck={false}
+            placeholder="Paste a contract, invoice, report — anything with facts in it."
+            className="flex-1 resize-none bg-transparent p-4 font-mono text-[13px] leading-relaxed text-ink placeholder:text-ink-3 focus:outline-none"
+          />
+        )}
       </section>
 
       {/* Schema + results pane */}
@@ -112,7 +165,7 @@ export function Extractor() {
             fields={fields}
             onChange={(f) => {
               setFields(f);
-              setRun({ status: "idle" });
+              reset();
             }}
             disabled={run.status === "running"}
           />
@@ -179,15 +232,22 @@ export function Extractor() {
             </p>
           )}
 
-          {run.status === "done" && (
+          {done && (
             <div className="mt-3">
-              <StatsBar cells={run.cells} />
+              <StatsBar cells={done.cells} />
+              {citedCount > 0 && (
+                <p className="mt-2 text-xs text-ink-3">
+                  Click a cited field to pin its span in the document.
+                </p>
+              )}
               <div className="mt-3">
                 <ResultsTable
-                  cells={run.cells}
+                  cells={done.cells}
                   fields={fields}
                   activeKey={activeKey}
-                  onHoverKey={setActiveKey}
+                  pinnedKey={pinnedKey}
+                  onHoverKey={setHoverKey}
+                  onSelectKey={setPinnedKey}
                 />
               </div>
             </div>

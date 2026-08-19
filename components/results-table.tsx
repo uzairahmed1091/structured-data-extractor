@@ -39,12 +39,16 @@ export function ResultsTable({
   cells,
   fields,
   activeKey,
+  pinnedKey,
   onHoverKey,
+  onSelectKey,
 }: {
   cells: Cell[];
   fields: FieldSpec[];
   activeKey: string | null;
+  pinnedKey: string | null;
   onHoverKey: (key: string | null) => void;
+  onSelectKey: (key: string | null) => void;
 }) {
   const labels = new Map(fields.map((f) => [f.key, f.label || f.key]));
 
@@ -52,12 +56,30 @@ export function ResultsTable({
     <ul className="divide-y divide-rule border-t border-rule">
       {cells.map((cell) => {
         const isActive = activeKey === cell.key;
+        const isPinned = pinnedKey === cell.key;
+        // Only a located citation has somewhere to jump to. Rows with no span stay inert
+        // rather than offering a click that does nothing.
+        const citable = cell.status === "found" && cell.span !== null;
+
         return (
           <li
             key={cell.key}
-            onMouseEnter={() => onHoverKey(cell.key)}
-            onMouseLeave={() => onHoverKey(null)}
-            className={`px-1 py-3 transition-colors ${isActive ? "bg-field" : ""}`}
+            onMouseEnter={() => citable && onHoverKey(cell.key)}
+            onMouseLeave={() => citable && onHoverKey(null)}
+            onClick={() => citable && onSelectKey(isPinned ? null : cell.key)}
+            onKeyDown={(e) => {
+              if (!citable) return;
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelectKey(isPinned ? null : cell.key);
+              }
+            }}
+            role={citable ? "button" : undefined}
+            tabIndex={citable ? 0 : undefined}
+            aria-pressed={citable ? isPinned : undefined}
+            className={`px-1 py-3 transition-colors ${citable ? "cursor-pointer" : ""} ${
+              isActive ? "bg-field" : ""
+            }`}
           >
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-sm font-medium tracking-tight">
