@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+@theme {
+  /* Monochrome ink scale + one highlighter accent. The three status colours are the
+     design language, because the whole product is about three outcomes:
+     cited, absent, rejected. */
+  --color-ink: #0f1317;
+  --color-ink-2: #4a5359;
+  --color-ink-3: #838d94;
+  --color-rule: #d8dde1;
+  --color-field: #eceef0;
+  --color-paper: #ffffff;
+
+  --color-mark: #ffe873;      /* highlighter — a cited span */
+  --color-mark-deep: #eec600; /* highlighter, active */
+  --color-flag: #b8253a;      /* rejected value */
+
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--color-field);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-feature-settings: "kern";
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--color-mark);
+    color: var(--color-ink);
+  }
+}
+
+@layer utilities {
+  /* Eyebrow labels: small, wide, mono. Used for field keys and status chips —
+     these are identifiers, not prose, so they get the utility face. */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
