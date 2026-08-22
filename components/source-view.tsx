@@ -34,22 +34,45 @@ export function SourceView({
   }, [text, cells]);
 
   const marks = useRef(new Map<string, HTMLElement>());
+  const container = useRef<HTMLDivElement>(null);
 
-  // Scroll the active citation into view. Driven by the results table, so hovering or
-  // clicking a field pulls its evidence into the viewport even in a long document.
+  /**
+   * Bring a pinned citation into view — and only a *pinned* one. Scrolling on hover means
+   * the page moves under the pointer while someone is reading the results list, which on a
+   * stacked layout makes the list impossible to scroll at all: every row you pass yanks
+   * you somewhere else.
+   *
+   * This also scrolls the pane by hand rather than calling scrollIntoView(), which walks
+   * every scrollable ancestor up to the window and drags the whole document with it.
+   */
   useEffect(() => {
-    if (!activeKey) return;
-    const el = marks.current.get(activeKey);
-    if (!el) return;
-    const reduced =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    el.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
-  }, [activeKey]);
+    if (!pinnedKey) return;
+
+    const pane = container.current;
+    const el = marks.current.get(pinnedKey);
+    if (!pane || !el) return;
+
+    const paneBox = pane.getBoundingClientRect();
+    const markBox = el.getBoundingClientRect();
+
+    // Already comfortably in view: leave the scroll position alone.
+    if (markBox.top >= paneBox.top && markBox.bottom <= paneBox.bottom) return;
+
+    const offset =
+      markBox.top - paneBox.top - (pane.clientHeight - markBox.height) / 2;
+
+    pane.scrollTo({
+      top: pane.scrollTop + offset,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+    });
+  }, [pinnedKey]);
 
   return (
     <div
-      className="flex-1 overflow-auto p-4 font-mono text-[13px] leading-relaxed whitespace-pre-wrap text-ink"
+      ref={container}
+      className="min-h-0 flex-1 overflow-auto p-4 font-mono text-[13px] leading-relaxed whitespace-pre-wrap text-ink"
       onMouseLeave={() => onHoverKey(null)}
     >
       {segments.map((seg, i) => {

@@ -14,6 +14,7 @@
   --color-mark: #ffe873;      /* highlighter — a cited span */
   --color-mark-deep: #eec600; /* highlighter, active */
   --color-flag: #b8253a;      /* rejected value */
+  --color-warn: #8a5a00;      /* approaching a hard limit */
 
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;

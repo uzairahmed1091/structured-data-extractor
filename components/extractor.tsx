@@ -94,11 +94,11 @@ export function Extractor() {
   const citedCount = done?.cells.filter((c) => c.status === "found" && c.span).length ?? 0;
 
   return (
-    <div className="mx-auto grid max-w-[1400px] gap-4 p-4 lg:grid-cols-[1.1fr_1fr] lg:p-6">
+    <div className="mx-auto grid w-full max-w-[1400px] gap-4 p-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[1.1fr_1fr] lg:overflow-hidden lg:p-6">
       {/* Source pane. Editable until a run lands, then swaps to the cited view so the
           highlights sit on the exact string the model saw. */}
-      <section className="flex min-h-[60vh] flex-col rounded-sm border border-rule bg-paper">
-        <header className="flex flex-wrap items-center gap-2 border-b border-rule px-4 py-3">
+      <section className="flex max-h-[70dvh] min-h-[50vh] flex-col overflow-hidden rounded-sm border border-rule bg-paper lg:max-h-none lg:min-h-0">
+        <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-rule px-4 py-3">
           <h2 className="text-sm font-semibold tracking-tight">Document</h2>
           <span className="eyebrow text-ink-3">
             {showCited
@@ -153,14 +153,14 @@ export function Extractor() {
             }}
             spellCheck={false}
             placeholder="Paste a contract, invoice, report — anything with facts in it."
-            className="flex-1 resize-none bg-transparent p-4 font-mono text-[13px] leading-relaxed text-ink placeholder:text-ink-3 focus:outline-none"
+            className="min-h-0 flex-1 resize-none bg-transparent p-4 font-mono text-[13px] leading-relaxed text-ink placeholder:text-ink-3 focus:outline-none"
           />
         )}
       </section>
 
-      {/* Schema + results pane */}
-      <section className="flex flex-col gap-4">
-        <div className="rounded-sm border border-rule bg-paper p-4">
+      {/* Schema + results pane. Scrolls inside itself on desktop so the page doesn't. */}
+      <section className="flex flex-col gap-4 lg:min-h-0 lg:overflow-y-auto">
+        <div className="shrink-0 rounded-sm border border-rule bg-paper p-4">
           <SchemaBuilder
             fields={fields}
             onChange={(f) => {
@@ -206,7 +206,7 @@ export function Extractor() {
           )}
         </div>
 
-        <div className="rounded-sm border border-rule bg-paper p-4">
+        <div className="shrink-0 rounded-sm border border-rule bg-paper p-4">
           <div className="flex items-baseline justify-between border-b border-rule pb-2">
             <h2 className="text-sm font-semibold tracking-tight">Result</h2>
             {run.status === "done" && (
