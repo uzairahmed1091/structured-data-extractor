@@ -10,6 +10,7 @@ import {
   summarize,
 } from "@/lib/extract";
 import { checkRateLimit, rateLimitHeaders } from "@/lib/ratelimit";
+import { checkDemoBudget, recordDemoSpend } from "@/lib/budget";
 import { computeCacheKey, getCachedRun, saveRun } from "@/lib/runs";
 
 export const runtime = "nodejs";
@@ -87,6 +88,22 @@ export async function POST(req: Request) {
 
   let limitHeaders: Record<string, string> = {};
   if (!byoKey) {
+    // The day's budget is checked before the per-IP limiter for the same reason the key
+    // is: a request that cannot run shouldn't consume a visitor's quota. Per-IP limiting
+    // bounds one visitor; this bounds the bill.
+    const budget = await checkDemoBudget();
+    if (!budget.ok) {
+      return NextResponse.json(
+        {
+          error: "demo_budget_exhausted",
+          message:
+            "The shared demo key has used up today's budget. Add your own OpenAI key to keep going — it resets at 00:00 UTC.",
+          budgetUsd: budget.budgetUsd,
+        },
+        { status: 429 },
+      );
+    }
+
     const limit = await checkRateLimit(clientIp(req));
     limitHeaders = rateLimitHeaders(limit);
     if (!limit.ok) {
@@ -112,6 +129,10 @@ export async function POST(req: Request) {
     });
 
     const durationMs = Date.now() - started;
+
+    // Meter what the shared key actually spent, using reported usage rather than an
+    // estimate. BYO-key runs cost the demo nothing and are never counted.
+    if (!byoKey) await recordDemoSpend(result.model, result.usage);
 
     const runId = await saveRun({
       cacheKey,
