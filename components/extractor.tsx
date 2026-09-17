@@ -74,7 +74,11 @@ export function Extractor() {
         // Both of these are "the shared key can't serve you" rather than "you did
         // something wrong", and the fix in each case is the key field. Open it rather
         // than making the visitor find the link under an error they just hit.
-        if (data.error === "demo_budget_exhausted" || data.error === "rate_limited") {
+        if (
+          data.error === "demo_budget_exhausted" ||
+          data.error === "rate_limited" ||
+          data.error === "not_configured"
+        ) {
           setShowKeyInput(true);
         }
         setRun({ status: "error", message: data.message ?? "Extraction failed." });

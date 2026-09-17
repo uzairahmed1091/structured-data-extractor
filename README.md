@@ -4,10 +4,10 @@ Define a schema, paste a document, get back typed and validated JSON where **eve
 carries a citation to the exact span it came from**, and **fields the document doesn't
 contain come back `null`** rather than a plausible guess.
 
-<!-- TODO: replace with the Vercel URL once deployed, then delete this comment.
-     **[Live demo](https://REPLACE-ME.vercel.app)** · runs on `gpt-4o-mini`, no sign-up,
-     bring your own key to skip the shared quota. -->
-Runs on `gpt-4o-mini`. No sign-up; bring your own key to skip the shared quota.
+**[Live demo](https://structured-data-extractor.vercel.app/)** · runs on `gpt-4o-mini`,
+no sign-up. The preloaded sample documents are served from cache and cost nothing; running
+your own document needs your own OpenAI key, pasted into the field in the UI and used for
+that one request.
 
 <!-- TODO: demo.gif — load the insurance declarations sample, run it, click the dwelling
      limit to pin its highlight, then point at the earthquake field coming back null.

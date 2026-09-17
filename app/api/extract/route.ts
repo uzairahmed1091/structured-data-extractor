@@ -83,8 +83,18 @@ export async function POST(req: Request) {
 
   // Resolve the key before the limiter: a misconfigured server shouldn't burn a
   // visitor's hourly quota on a request that was never going to run.
+  // Deploying without OPENAI_API_KEY is a supported posture, not only a misconfiguration:
+  // the cache lookup above already served the preloaded samples for free, so the site
+  // stays useful as a bring-your-own-key tool at zero running cost. The message has to
+  // read as a next step either way, because a visitor can't tell the two cases apart.
   const apiKey = byoKey ?? process.env.OPENAI_API_KEY;
-  if (!apiKey) return fail(503, "not_configured", "Demo key is not configured.");
+  if (!apiKey) {
+    return fail(
+      503,
+      "not_configured",
+      "No shared demo key is available. Add your own OpenAI key to run this extraction — the preloaded sample documents are cached and free.",
+    );
+  }
 
   let limitHeaders: Record<string, string> = {};
   if (!byoKey) {
