@@ -286,7 +286,7 @@ Questions about this invoice? Write to billing@northwind.example.`,
         key: "mortgagee_name",
         label: "Mortgagee",
         type: "string",
-        description: "The lender named as mortgagee on the policy.",
+        description: "The lender named as mortgagee on the policy. Lender name only.",
       },
       {
         key: "earthquake_coverage_included",
