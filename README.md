@@ -4,8 +4,21 @@ Define a schema, paste a document, get back typed and validated JSON where **eve
 carries a citation to the exact span it came from**, and **fields the document doesn't
 contain come back `null`** rather than a plausible guess.
 
-<!-- TODO(evening 3): demo.gif — load the services agreement, run it, hover a row to move
-     the highlight, then point at the null. ~20s, no cursor hunting. -->
+<!-- TODO: replace with the Vercel URL once deployed, then delete this comment.
+     **[Live demo](https://REPLACE-ME.vercel.app)** · runs on `gpt-4o-mini`, no sign-up,
+     bring your own key to skip the shared quota. -->
+Runs on `gpt-4o-mini`. No sign-up; bring your own key to skip the shared quota.
+
+<!-- TODO: demo.gif — load the insurance declarations sample, run it, click the dwelling
+     limit to pin its highlight, then point at the earthquake field coming back null.
+     ~20s, no cursor hunting. -->
+
+## Why this exists
+
+Extraction demos are easy to make look good and hard to trust. A model asked for twelve
+fields will return twelve fields, and the two that aren't in the document look exactly
+like the ten that are. This project is an argument that the interesting engineering isn't
+the prompt — it's everything you do to the model's answer before showing it to anyone.
 
 ## The two guarantees, and how they're enforced
 
@@ -32,6 +45,20 @@ UI. Four statuses, four distinct renderings:
 | `unverified` | value arrived with a citation that isn't in the document. Discarded. |
 | `invalid` | value failed its declared type. Discarded. |
 
+### What this does not prove
+
+Span verification proves a quote **exists** in the source. It does not prove the quote
+**supports** the value. A model that answers a question about flood deductibles by quoting
+the wind deductible line produces a wrong value with a real citation, and this pipeline
+will pass it as `found`. Catching that needs an entailment check — a second model call
+scoring quote-against-value — which is a real cost increase for a demo that has to run
+unattended, so it isn't here.
+
+What verification does buy is the elimination of the *silent* failure: a fabricated value
+attached to a fabricated quote, which is the common case, cannot survive. The sample
+documents are written so their absent fields have no near-miss text to grab, which makes
+them honest tests of the null path rather than coin flips.
+
 ## Architecture
 
 ```
@@ -41,6 +68,8 @@ lib/locate.ts     quote -> character span, with normalization + offset mapping
 lib/extract.ts    prompt, model call, per-cell validation and citation verification
 lib/runs.ts       Supabase persistence, doubling as the content-addressed cache
 lib/ratelimit.ts  Upstash sliding window, in-memory fallback for local dev
+lib/budget.ts     site-wide daily spend ceiling on the shared key
+lib/samples.ts    three documents, each with at least one genuinely absent field
 ```
 
 The JSON Schema is written by hand rather than generated from Zod. Strict mode requires
@@ -48,7 +77,15 @@ The JSON Schema is written by hand rather than generated from Zod. Strict mode r
 as nullable unions, and rejects `format`/`pattern` — generating it directly is less code
 than post-processing a generated schema into compliance.
 
+The client holds the document text and posts it back for re-render. Citation offsets index
+into the exact string that was sent to the model, so the highlighted view is handed that
+same captured string rather than the live editor value — re-parsing or re-normalizing
+before rendering would drift every span.
+
 ## Running cheaply, unattended
+
+This is a public demo on someone's personal OpenAI key, so cost is a design constraint
+rather than an afterthought.
 
 - `gpt-4o-mini` pinned on the demo path; model choice only unlocks with your own key.
 - Documents capped at 60k chars, schemas at 25 fields, output at `256 + 150/field` tokens.
@@ -57,8 +94,21 @@ than post-processing a generated schema into compliance.
   invalidates everything.
 - **Cache lookup runs before the rate limiter.** Samples are the common path, cost nothing
   to serve, and shouldn't burn a visitor's quota before they've tried their own schema.
-- 10 requests/hour/IP on the shared key. Bring-your-own-key skips the limiter entirely.
-- BYO keys arrive in a header, are used once, and are never logged or persisted.
+- 10 requests/hour/IP on the shared key.
+- **A site-wide daily spend ceiling** (`DEMO_DAILY_BUDGET_USD`) on top of that. Per-IP
+  limiting bounds what one visitor costs; it does not bound the total, and ten requests an
+  hour times an arbitrary number of addresses is an arbitrary bill. Spend is metered from
+  reported usage into an atomic Redis counter; when the day's budget is gone the demo path
+  closes and the UI asks for your own key. The app stays up, it just stops paying for
+  strangers.
+- Bring-your-own keys skip the limiter and the budget entirely, arrive in a header, are
+  used once, and are never logged or persisted.
+- Stored runs prune after 30 days; sample runs are exempt so the cache stays warm.
+
+**Document text is deliberately not persisted.** The client already holds it and sends it
+back for re-render, so there is nothing to reconstruct server-side and one less pile of
+strangers' pasted text at rest. What's stored is the cells, the schema, token usage, and
+timings.
 
 ## Setup
 
@@ -68,21 +118,28 @@ cp .env.example .env.local   # OPENAI_API_KEY at minimum
 npm run dev
 ```
 
-Supabase and Upstash are both optional locally — without them, caching is skipped and the
-rate limiter falls back to per-instance memory. The `extraction_runs` DDL is in the header
-comment of `lib/runs.ts`.
+Supabase and Upstash are both optional locally — without them, caching is skipped, the
+rate limiter falls back to per-instance memory, and so does the spend counter. Deploy with
+Upstash configured if the URL is public: a per-instance counter is not a global bound.
 
-Document text is deliberately **not** persisted. The client already holds it and sends it
-back for re-render, so there is nothing to reconstruct server-side and one less pile of
-strangers' pasted text at rest. Runs prune after 30 days.
+Database schema is in `supabase/migrations/`; apply it with `supabase db push`. RLS is
+enabled with no policies, so the server connects with the **secret** key — the publishable
+key is the anon role and cannot bypass RLS, which fails silently rather than loudly.
 
 ## Stack
 
 Next.js 16 (App Router) · TypeScript · Tailwind v4 · Zod 4 · OpenAI structured outputs ·
 Supabase · Upstash · Vercel
 
-## Status
+## Not built
 
-- [x] Evening 1 — schema builder, paste-text input, schema→Zod, extraction, results table
-- [ ] Evening 2 — PDF upload, citation highlighting, JSON/CSV export
-- [ ] Evening 3 — three sample documents, Supabase persistence, rate limiting, deploy
+Honest list, rather than a roadmap that ages badly:
+
+- **PDF upload.** Text paste only for now. `lib/locate.ts` already normalizes the things a
+  PDF text layer does to a quote, but nothing extracts the text yet.
+- **JSON/CSV export.** `toPlainRecord` and `buildOutputSchema` exist and are unused.
+- **Entailment checking.** See *What this does not prove* above.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
