@@ -9,9 +9,9 @@ no sign-up. The preloaded sample documents are served from cache and cost nothin
 your own document needs your own OpenAI key, pasted into the field in the UI and used for
 that one request.
 
-<!-- TODO: demo.gif — load the insurance declarations sample, run it, click the dwelling
-     limit to pin its highlight, then point at the earthquake field coming back null.
-     ~20s, no cursor hunting. -->
+![Extracting seven fields from a services agreement: each cited value highlights its source
+span in the document when clicked, and the field the contract never states comes back
+null](docs/demo.gif)
 
 ## Why this exists
 
