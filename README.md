@@ -110,6 +110,10 @@ back for re-render, so there is nothing to reconstruct server-side and one less 
 strangers' pasted text at rest. What's stored is the cells, the schema, token usage, and
 timings.
 
+Usage is counted, not tracked. Each extraction attempt writes one row saying which sample
+(or "own document") was run and how it ended — no content, no IP, no visitor identifier.
+Page views use Vercel's cookieless analytics.
+
 ## Setup
 
 ```bash

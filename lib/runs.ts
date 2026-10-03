@@ -117,3 +117,33 @@ export async function saveRun(input: {
 
   return existing?.id ?? null;
 }
+
+/**
+ * Anonymous usage counts — one row per extraction attempt.
+ *
+ * extraction_runs can't say whether anyone used the demo: a cached sample returns before
+ * anything is saved, so sample traffic leaves no trace there. This records that an attempt
+ * happened and how it ended, and nothing else — no document, no schema, no values, no IP.
+ *
+ * Best-effort by design. Called from after(), so it never delays a response, and a failed
+ * insert is swallowed: losing a count must not cost a visitor their result.
+ */
+export async function logEvent(event: {
+  source: string;
+  outcome: string;
+  fieldCount: number;
+  byoKey: boolean;
+  owner: boolean;
+}): Promise<void> {
+  const db = supabase();
+  if (!db) return;
+
+  const { error } = await db.from("extraction_events").insert({
+    source: event.source,
+    outcome: event.outcome,
+    field_count: event.fieldCount,
+    byo_key: event.byoKey,
+    owner: event.owner,
+  });
+  if (error) console.error("logEvent failed", error.message);
+}

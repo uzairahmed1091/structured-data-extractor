@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { schemaSpecSchema } from "@/lib/schema";
 import {
@@ -11,7 +11,8 @@ import {
 } from "@/lib/extract";
 import { checkRateLimit, rateLimitHeaders } from "@/lib/ratelimit";
 import { checkDemoBudget, recordDemoSpend } from "@/lib/budget";
-import { computeCacheKey, getCachedRun, saveRun } from "@/lib/runs";
+import { computeCacheKey, getCachedRun, logEvent, saveRun } from "@/lib/runs";
+import { SAMPLES } from "@/lib/samples";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -63,11 +64,22 @@ export async function POST(req: Request) {
 
   const cacheKey = computeCacheKey({ model, documentText: text, fields });
 
+  // Count the attempt once the response has gone out. `sampleId` is client-supplied, so
+  // it is checked against the real list rather than stored as given; anything else is a
+  // visitor's own document. The owner flag lets the site owner's testing be filtered out.
+  const source = SAMPLES.some((s) => s.id === sampleId) ? (sampleId as string) : "own";
+  const owner = req.headers.get("x-ce-owner") === "1";
+  const record = (outcome: string) =>
+    after(() =>
+      logEvent({ source, outcome, fieldCount: fields.length, byoKey: Boolean(byoKey), owner }),
+    );
+
   // Cache lookup precedes the rate limit deliberately: sample documents are the common
   // case, cost nothing to serve, and shouldn't burn a visitor's quota before they've
   // tried their own schema.
   const cached = await getCachedRun(cacheKey);
   if (cached) {
+    record("cached");
     return NextResponse.json(
       {
         runId: cached.id,
@@ -89,6 +101,7 @@ export async function POST(req: Request) {
   // read as a next step either way, because a visitor can't tell the two cases apart.
   const apiKey = byoKey ?? process.env.OPENAI_API_KEY;
   if (!apiKey) {
+    record("not_configured");
     return fail(
       503,
       "not_configured",
@@ -103,6 +116,7 @@ export async function POST(req: Request) {
     // bounds one visitor; this bounds the bill.
     const budget = await checkDemoBudget();
     if (!budget.ok) {
+      record("demo_budget_exhausted");
       return NextResponse.json(
         {
           error: "demo_budget_exhausted",
@@ -117,6 +131,7 @@ export async function POST(req: Request) {
     const limit = await checkRateLimit(clientIp(req));
     limitHeaders = rateLimitHeaders(limit);
     if (!limit.ok) {
+      record("rate_limited");
       return NextResponse.json(
         {
           error: "rate_limited",
@@ -144,6 +159,8 @@ export async function POST(req: Request) {
     // estimate. BYO-key runs cost the demo nothing and are never counted.
     if (!byoKey) await recordDemoSpend(result.model, result.usage);
 
+    record("ok");
+
     const runId = await saveRun({
       cacheKey,
       model: result.model,
@@ -170,12 +187,14 @@ export async function POST(req: Request) {
     );
   } catch (err) {
     if (err instanceof ExtractionError) {
+      record(err.code);
       return NextResponse.json(
         { error: err.code, message: err.message },
         { status: err.status, headers: limitHeaders },
       );
     }
     console.error("extract route failed", err);
+    record("unknown");
     return fail(500, "unknown", "Extraction failed.");
   }
 }
