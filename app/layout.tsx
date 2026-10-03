@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-sans/500.css";
 import "@fontsource/ibm-plex-sans/600.css";
@@ -17,7 +18,13 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        {children}
+        {/* Cookieless page views and referrers. The referrer is the point: it says
+            whether anyone arrives from the Upwork portfolio tile or the GitHub repo,
+            which is the only way to tell if either is doing anything. */}
+        <Analytics />
+      </body>
     </html>
   );
 }

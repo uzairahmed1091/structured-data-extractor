@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { track } from "@vercel/analytics";
 import { SchemaBuilder } from "./schema-builder";
 import { ResultsTable, StatsBar } from "./results-table";
 import { SourceView } from "./source-view";
@@ -81,9 +82,22 @@ export function Extractor() {
         ) {
           setShowKeyInput(true);
         }
+        // Worth knowing how often visitors hit a wall rather than the thing itself.
+        track("extract_blocked", { reason: String(data.error ?? "unknown") });
         setRun({ status: "error", message: data.message ?? "Extraction failed." });
         return;
       }
+
+      // Metadata only — never the document, the schema text, or the extracted values.
+      // A page view says someone arrived; this says they actually ran the thing, which
+      // is the number that tells you whether the page lands.
+      track("extract", {
+        source: sampleId ?? "own document",
+        fields: fields.length,
+        cached: Boolean(data.cached),
+        byoKey: Boolean(apiKey),
+      });
+
       setRun({
         status: "done",
         cells: data.cells,
