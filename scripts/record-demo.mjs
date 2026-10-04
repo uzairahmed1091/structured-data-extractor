@@ -1,7 +1,7 @@
 /**
  * Records the README demo and encodes it to docs/demo.gif + docs/demo.mp4.
  *
- *   npm run record:demo
+ *   npm run record:demo        (reads overrides from .env.local, if present)
  *
  * Playwright can only emit .webm, which GitHub will not render in a README, so the webm
  * is treated as an intermediate: it lands in a temp directory, gets encoded, and is
@@ -157,26 +157,36 @@ async function glideTo(locator, { steps = 22 } = {}) {
 
 const wait = (ms) => page.waitForTimeout(ms);
 
+console.log({
+  URL,
+  WIDTH,
+  FPS,
+  COLORS,
+  CHROME_PATH: process.env.CHROME_PATH,
+  REAL_RUN: process.env.REAL_RUN
+});
+
 await page.goto(URL, { waitUntil: "networkidle" });
 await page.mouse.move(640, 700);
-await wait(1200);
+await wait(1400);
 
-// 1. Run the extraction.
-const extract = page.getByRole("button", { name: "Extract" });
+// The page opens on the pitch. Hold it for a beat, then bring the tool up so it fills
+// the frame — the workspace is one viewport tall, so centring it is the same as docking it.
+await smoothScrollIntoView(page.locator("#workspace"), { duration: 800 });
+await wait(700);
+
+// 1. Run the extraction. The right pane switches to the Result tab by itself, so the
+// payoff frame — highlights on the left beside the cited values on the right — arrives
+// without any scrolling.
+const extract = page.getByRole("button", { name: "Extract", exact: true });
 await glideTo(extract);
 await wait(500);
 await extract.click();
 await page.getByText("cited spans").waitFor({ timeout: 60000 });
-
-// Bring the results panel up straight away. The payoff frame is highlights on the left
-// beside the cited values on the right — every second spent looking at the schema builder
-// after the run is a second of the GIF doing nothing.
-const resultPanel = page.locator("h2", { hasText: "Result" }).first();
-await smoothScrollIntoView(resultPanel, { duration: 650 });
 await wait(1600);
 
 // 2. Click two cited fields — the highlight pins and the document scrolls to it.
-const rows = page.locator("ul li[role='button']");
+const rows = page.locator("ul[data-results] li button");
 for (const name of ["Total fee (USD)", "Governing law"]) {
   const row = rows.filter({ hasText: name }).first();
   await glideTo(row);
@@ -186,7 +196,7 @@ for (const name of ["Total fee (USD)", "Governing law"]) {
 }
 
 // 3. Rest on the field the document does not contain.
-const nullRow = page.locator("ul li").filter({ hasText: "Termination notice" }).first();
+const nullRow = page.locator("ul[data-results] li").filter({ hasText: "Termination notice" }).first();
 await glideTo(nullRow);
 await wait(2600);
 

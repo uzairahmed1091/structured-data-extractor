@@ -13,11 +13,22 @@ export const metadata: Metadata = {
     "Define a schema, paste a document, get validated JSON where every value cites the exact span it came from and missing fields come back null.",
 };
 
+/**
+ * Runs before first paint so the page never flashes the wrong theme. A saved choice wins;
+ * otherwise follow the OS. Kept in sync with THEME_KEY in components/theme-toggle.tsx.
+ */
+const themeScript = `(function(){try{var t=localStorage.getItem("ce-theme");if(t!=="light"&&t!=="dark"){t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}document.documentElement.dataset.theme=t}catch(e){document.documentElement.dataset.theme="light"}})()`;
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    // The script above sets data-theme on <html> before React hydrates, so the attribute
+    // legitimately differs from the server render.
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body className="antialiased">
         {children}
         {/* Cookieless page views and referrers. The referrer is the point: it says

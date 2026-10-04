@@ -72,7 +72,7 @@ export function SourceView({
   return (
     <div
       ref={container}
-      className="min-h-0 flex-1 overflow-auto p-4 font-mono text-[13px] leading-relaxed whitespace-pre-wrap text-ink"
+      className="min-h-0 flex-1 overflow-auto px-5 py-5 font-mono text-[12.5px] leading-[1.75] break-words whitespace-pre-wrap text-ink"
       onMouseLeave={() => onHoverKey(null)}
     >
       {segments.map((seg, i) => {
@@ -100,11 +100,9 @@ export function SourceView({
                 onSelectKey(isPinned ? null : key);
               }
             }}
-            className={`cursor-pointer rounded-[2px] px-px transition-colors ${
-              isActive
-                ? "bg-mark-deep text-ink"
-                : "bg-mark text-ink hover:bg-mark-deep"
-            } ${isPinned ? "outline outline-1 outline-offset-1 outline-ink" : ""}`}
+            data-active={isActive}
+            data-pinned={isPinned}
+            className="cite cursor-pointer"
           >
             {seg.text}
           </mark>

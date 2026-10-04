@@ -1,18 +1,26 @@
 @import "tailwindcss";
 
-@theme {
+/* Theme is a data attribute on <html>, set before first paint by the inline script in
+   layout.tsx. `dark:` utilities follow it rather than the OS setting, so the toggle wins. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme static {
   /* Monochrome ink scale + one highlighter accent. The three status colours are the
      design language, because the whole product is about three outcomes:
      cited, absent, rejected. */
   --color-ink: #0f1317;
   --color-ink-2: #4a5359;
-  --color-ink-3: #838d94;
+  --color-ink-3: #5f696f;
   --color-rule: #d8dde1;
   --color-field: #eceef0;
   --color-paper: #ffffff;
+  --color-raise: #f4f5f6;     /* hover rows, inset strips */
 
-  --color-mark: #ffe873;      /* highlighter — a cited span */
-  --color-mark-deep: #eec600; /* highlighter, active */
+  --color-mark: #ffe873;      /* highlighter, the same yellow in both themes */
+  --color-on-mark: #0f1317;   /* text sitting on the highlighter */
+  --color-mark-soft: #ffe873; /* a cited span at rest */
+  --color-mark-ink: #0f1317;  /* text of a cited span at rest */
+  --color-mark-deep: #eec600; /* a cited span, hovered or pinned */
   --color-flag: #b8253a;      /* rejected value */
   --color-warn: #8a5a00;      /* approaching a hard limit */
 
@@ -21,8 +29,38 @@
 }
 
 @layer base {
+  :root {
+    color-scheme: light;
+    --panel-shadow: 0 1px 0 rgb(15 19 23 / 0.04), 0 14px 30px -20px rgb(15 19 23 / 0.3);
+  }
+
+  /* Dark keeps the same tokens and re-points them, so components never branch on theme.
+     A page of full-strength yellow blocks on near-black is unreadable, so spans rest as a
+     tint and only the hovered or pinned one gets the real highlighter. */
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --color-ink: #eef1f3;
+    --color-ink-2: #b3bcc2;
+    --color-ink-3: #8f999f;
+    --color-rule: #2b333a;
+    --color-field: #0b0e11;
+    --color-paper: #14181c;
+    --color-raise: #1c2228;
+    --color-mark-soft: rgb(255 232 115 / 0.2);
+    --color-mark-ink: #fff1a8;
+    --color-mark-deep: #ffe873;
+    --color-flag: #ff8091;
+    --color-warn: #e3a93c;
+    --panel-shadow: none;
+  }
+
   html {
     -webkit-text-size-adjust: 100%;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
   }
   body {
     background: var(--color-field);
@@ -36,7 +74,58 @@
   }
   ::selection {
     background: var(--color-mark);
-    color: var(--color-ink);
+    color: var(--color-on-mark);
+  }
+}
+
+@layer components {
+  .panel {
+    background: var(--color-paper);
+    border: 1px solid var(--color-rule);
+    border-radius: 6px;
+    box-shadow: var(--panel-shadow);
+  }
+
+  /* A cited span. `data-active` is hover-or-pinned; `data-pinned` adds the outline. */
+  .cite {
+    background: var(--color-mark-soft);
+    color: var(--color-mark-ink);
+    border-radius: 2px;
+    padding: 1px;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+    transition: background-color 0.15s, color 0.15s;
+  }
+  .cite[data-active="true"],
+  .cite[role="button"]:hover {
+    background: var(--color-mark-deep);
+    color: var(--color-on-mark);
+  }
+  .cite[data-pinned="true"] {
+    outline: 1.5px solid var(--color-ink);
+    outline-offset: 1px;
+  }
+
+  /* Loading placeholder for result rows. */
+  .skeleton {
+    border-radius: 3px;
+    background: linear-gradient(
+      90deg,
+      var(--color-raise) 25%,
+      var(--color-rule) 50%,
+      var(--color-raise) 75%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-sweep 1.2s linear infinite;
+  }
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
   }
 }
 
