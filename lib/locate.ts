@@ -137,3 +137,21 @@ export function segmentByCitations(
   if (cursor < source.length) segments.push({ text: source.slice(cursor), keys: [] });
   return segments;
 }
+
+/**
+ * Field keys in the order their highlights appear in the source. This is the footnote
+ * numbering: citation 1 is the first highlight a reader meets, whatever order the schema
+ * lists its fields in. A citation that lost every character to an overlap has no highlight
+ * and so gets no number.
+ */
+export function citationOrder(
+  source: string,
+  citations: Array<{ key: string; span: Span }>,
+): string[] {
+  const order: string[] = [];
+  for (const segment of segmentByCitations(source, citations)) {
+    const key = segment.keys[0];
+    if (key && !order.includes(key)) order.push(key);
+  }
+  return order;
+}

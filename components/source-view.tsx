@@ -14,6 +14,7 @@ import type { Cell } from "@/lib/extract";
 export function SourceView({
   text,
   cells,
+  numbers,
   activeKey,
   pinnedKey,
   onHoverKey,
@@ -21,6 +22,8 @@ export function SourceView({
 }: {
   text: string;
   cells: Cell[];
+  /** Footnote number per field key, in reading order. */
+  numbers: Map<string, number>;
   activeKey: string | null;
   pinnedKey: string | null;
   onHoverKey: (key: string | null) => void;
@@ -79,6 +82,9 @@ export function SourceView({
         const key = seg.keys[0];
         if (!key) return <span key={i}>{seg.text}</span>;
 
+        const number = numbers.get(key);
+        // A citation is one segment, so the number can simply ride on it.
+
         const isActive = key === activeKey;
         const isPinned = key === pinnedKey;
 
@@ -91,7 +97,7 @@ export function SourceView({
             role="button"
             tabIndex={0}
             aria-pressed={isPinned}
-            aria-label={`Citation for ${key}`}
+            aria-label={number ? `Citation ${number} for ${key}` : `Citation for ${key}`}
             onMouseEnter={() => onHoverKey(key)}
             onClick={() => onSelectKey(isPinned ? null : key)}
             onKeyDown={(e) => {
@@ -104,6 +110,11 @@ export function SourceView({
             data-pinned={isPinned}
             className="cite cursor-pointer"
           >
+            {number !== undefined && (
+              <span className="cite-num" aria-hidden="true">
+                {number}
+              </span>
+            )}
             {seg.text}
           </mark>
         );

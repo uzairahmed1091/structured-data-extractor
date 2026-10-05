@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { isOwner } from "./analytics";
 import { SchemaBuilder } from "./schema-builder";
-import { ResultsTable, StatsBar, StatusChip } from "./results-table";
+import { JsonView, ResultsTable, StatsBar, StatusChip } from "./results-table";
 import { SourceView } from "./source-view";
 import { DEFAULT_SAMPLE, SAMPLES } from "@/lib/samples";
-import { DEMO_MODEL, MAX_TEXT_CHARS, type Cell } from "@/lib/extract";
+import { DEMO_MODEL, MAX_TEXT_CHARS, toPlainRecord, type Cell } from "@/lib/extract";
+import { citationOrder, type Span } from "@/lib/locate";
 import type { FieldSpec } from "@/lib/schema";
 
 type RunState =
@@ -25,6 +26,10 @@ export function Extractor() {
   // The right pane shows one of these at a time. A run flips it to the result so the
   // values land next to the document without anyone scrolling past the schema to find them.
   const [tab, setTab] = useState<"schema" | "result">("schema");
+  // Same result, two renderings: rows with their quotes, or the JSON a caller would get.
+  const [resultView, setResultView] = useState<"table" | "json">("table");
+  const [copied, setCopied] = useState(false);
+  const sidePane = useRef<HTMLDivElement>(null);
   // Hover is a preview, a click pins. Pin wins so the highlight survives moving the mouse
   // away from the row to look at the document.
   const [hoverKey, setHoverKey] = useState<string | null>(null);
@@ -112,6 +117,57 @@ export function Extractor() {
   const citedCount = done?.cells.filter((c) => c.status === "found" && c.span).length ?? 0;
   const sample = SAMPLES.find((s) => s.id === sampleId) ?? null;
 
+  /**
+   * Citations are numbered like footnotes, in the order a reader meets them in the
+   * document. The same number sits on the highlight and on its row, and the stepper
+   * walks them in this order.
+   */
+  const order = useMemo(() => {
+    if (run.status !== "done") return [];
+    const citations = run.cells
+      .filter((c): c is Cell & { span: Span } => c.status === "found" && c.span !== null)
+      .map((c) => ({ key: c.key, span: c.span }));
+    return citationOrder(extractedText, citations);
+  }, [run, extractedText]);
+  const numbers = useMemo(() => new Map(order.map((key, i) => [key, i + 1])), [order]);
+  const position = pinnedKey ? order.indexOf(pinnedKey) : -1;
+
+  // A pin made from the document or the stepper has to land somewhere visible, so it
+  // brings the Result tab forward. A pin made from a row is already there.
+  const pinFromDocument = (key: string | null) => {
+    setPinnedKey(key);
+    if (key) setTab("result");
+  };
+  const step = (delta: 1 | -1) => {
+    if (order.length === 0) return;
+    const next =
+      position < 0
+        ? delta > 0
+          ? 0
+          : order.length - 1
+        : (position + delta + order.length) % order.length;
+    pinFromDocument(order[next]);
+  };
+
+  const copyJson = async () => {
+    if (!done) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(toPlainRecord(done.cells), null, 2));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard blocked (permissions, insecure context). The JSON is on screen to select.
+    }
+  };
+
+  const segment = (active: boolean) =>
+    "min-h-9 border px-3 text-[12.5px] transition-colors " +
+    (active
+      ? "border-ink bg-ink text-paper"
+      : "border-rule text-ink-2 hover:border-ink hover:text-ink");
+  const stepButton =
+    "flex h-11 w-11 items-center justify-center rounded text-ink-2 hover:bg-raise hover:text-ink";
+
   const sampleTab = (active: boolean) =>
     "min-h-9 rounded px-3 text-[13px] whitespace-nowrap transition-colors " +
     (active ? "bg-ink text-paper" : "text-ink-2 hover:bg-raise hover:text-ink");
@@ -170,10 +226,11 @@ export function Extractor() {
             <SourceView
               text={extractedText}
               cells={done.cells}
+              numbers={numbers}
               activeKey={activeKey}
               pinnedKey={pinnedKey}
               onHoverKey={setHoverKey}
-              onSelectKey={setPinnedKey}
+              onSelectKey={pinFromDocument}
             />
           ) : (
             <textarea
@@ -192,11 +249,61 @@ export function Extractor() {
           )}
 
           <footer className="flex min-h-[52px] shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-rule py-1.5 pr-3 pl-4">
-            <span className="eyebrow text-ink-3">
-              {showCited
-                ? `${citedCount} cited ${citedCount === 1 ? "span" : "spans"}`
-                : `${text.length.toLocaleString()} / ${MAX_TEXT_CHARS.toLocaleString()} chars`}
-            </span>
+            {showCited && order.length > 0 ? (
+              <div className="-ml-3 flex items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => step(-1)}
+                  aria-label="Previous citation"
+                  className={stepButton}
+                >
+                  <svg
+                    viewBox="0 0 16 16"
+                    width="14"
+                    height="14"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M10 3.5L5.5 8l4.5 4.5" />
+                  </svg>
+                </button>
+                <span className="eyebrow min-w-[132px] text-center text-ink-2" aria-live="polite">
+                  {position < 0
+                    ? `${citedCount} cited ${citedCount === 1 ? "span" : "spans"}`
+                    : `Citation ${position + 1} of ${order.length}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => step(1)}
+                  aria-label="Next citation"
+                  className={stepButton}
+                >
+                  <svg
+                    viewBox="0 0 16 16"
+                    width="14"
+                    height="14"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M6 3.5L10.5 8 6 12.5" />
+                  </svg>
+                </button>
+              </div>
+            ) : (
+              <span className="eyebrow text-ink-3">
+                {showCited
+                  ? `${citedCount} cited ${citedCount === 1 ? "span" : "spans"}`
+                  : `${text.length.toLocaleString()} / ${MAX_TEXT_CHARS.toLocaleString()} chars`}
+              </span>
+            )}
             {showCited && (
               <button
                 type="button"
@@ -254,7 +361,7 @@ export function Extractor() {
             )}
           </div>
 
-          <div className="px-4 pt-1 pb-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+          <div ref={sidePane} className="px-4 pt-1 pb-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
             {tab === "schema" && (
               <div role="tabpanel" id="panel-schema" aria-labelledby="tab-schema">
                 <SchemaBuilder
@@ -318,20 +425,65 @@ export function Extractor() {
                   <>
                     <div className="flex flex-col gap-2 pt-3.5 pb-2.5">
                       <StatsBar cells={done.cells} />
-                      {citedCount > 0 && (
+                      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                         <p className="text-xs text-ink-3">
-                          Click a cited field to pin its span in the document.
+                          {citedCount > 0
+                            ? "Click a cited field to pin its span in the document."
+                            : "Nothing in this result could be cited."}
                         </p>
-                      )}
+                        <div className="flex items-center gap-2">
+                          {resultView === "json" && (
+                            <button
+                              type="button"
+                              onClick={copyJson}
+                              className={`${segment(false)} rounded`}
+                            >
+                              {copied ? "Copied" : "Copy"}
+                            </button>
+                          )}
+                          <div className="flex" role="group" aria-label="Result format">
+                            <button
+                              type="button"
+                              aria-pressed={resultView === "table"}
+                              onClick={() => setResultView("table")}
+                              className={`${segment(resultView === "table")} rounded-l`}
+                            >
+                              Table
+                            </button>
+                            <button
+                              type="button"
+                              aria-pressed={resultView === "json"}
+                              onClick={() => setResultView("json")}
+                              className={`${segment(resultView === "json")} -ml-px rounded-r`}
+                            >
+                              JSON
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <ResultsTable
-                      cells={done.cells}
-                      fields={fields}
-                      activeKey={activeKey}
-                      pinnedKey={pinnedKey}
-                      onHoverKey={setHoverKey}
-                      onSelectKey={setPinnedKey}
-                    />
+                    {resultView === "table" ? (
+                      <ResultsTable
+                        cells={done.cells}
+                        fields={fields}
+                        numbers={numbers}
+                        activeKey={activeKey}
+                        pinnedKey={pinnedKey}
+                        onHoverKey={setHoverKey}
+                        onSelectKey={setPinnedKey}
+                        scrollPane={sidePane}
+                      />
+                    ) : (
+                      <JsonView
+                        cells={done.cells}
+                        numbers={numbers}
+                        activeKey={activeKey}
+                        pinnedKey={pinnedKey}
+                        onHoverKey={setHoverKey}
+                        onSelectKey={setPinnedKey}
+                        scrollPane={sidePane}
+                      />
+                    )}
                   </>
                 )}
               </div>

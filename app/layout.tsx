@@ -7,10 +7,18 @@ import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./globals.css";
 
+const title = "Cited Extract — typed JSON from documents, with receipts";
+const description =
+  "Define a schema, paste a document, get validated JSON where every value cites the exact span it came from and missing fields come back null.";
+
 export const metadata: Metadata = {
-  title: "Cited Extract — typed JSON from documents, with receipts",
-  description:
-    "Define a schema, paste a document, get validated JSON where every value cites the exact span it came from and missing fields come back null.",
+  // Makes the link-preview image URL absolute. The image itself is app/opengraph-image.png,
+  // picked up by file convention, as are favicon.ico and apple-icon.png.
+  metadataBase: new URL("https://structured-data-extractor.vercel.app"),
+  title,
+  description,
+  openGraph: { title, description, type: "website", url: "/", siteName: "Cited Extract" },
+  twitter: { card: "summary_large_image", title, description },
 };
 
 /**

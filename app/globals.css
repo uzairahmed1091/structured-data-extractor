@@ -90,6 +90,7 @@
   .cite {
     background: var(--color-mark-soft);
     color: var(--color-mark-ink);
+    position: relative;
     border-radius: 2px;
     padding: 1px;
     -webkit-box-decoration-break: clone;
@@ -104,6 +105,38 @@
   .cite[data-pinned="true"] {
     outline: 1.5px solid var(--color-ink);
     outline-offset: 1px;
+  }
+
+  /* Footnote number on a cited span. Absolutely positioned on the corner so it never
+     shifts the text — the samples have column-aligned lines that a single inline
+     character would knock out of line. */
+  .cite-num {
+    position: absolute;
+    top: -5px;
+    left: -8px;
+    padding: 1px 3px;
+    border-radius: 3px;
+    background: var(--color-ink);
+    color: var(--color-paper);
+    font: 500 8px/1.2 var(--font-mono);
+    letter-spacing: 0;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* The same number, on the result row or JSON line it belongs to. */
+  .cite-tag {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 3px;
+    background: var(--color-ink);
+    color: var(--color-paper);
+    font: 500 10px/1 var(--font-mono);
   }
 
   /* Loading placeholder for result rows. */

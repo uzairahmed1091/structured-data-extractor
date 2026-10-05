@@ -141,7 +141,8 @@ Honest list, rather than a roadmap that ages badly:
 
 - **PDF upload.** Text paste only for now. `lib/locate.ts` already normalizes the things a
   PDF text layer does to a quote, but nothing extracts the text yet.
-- **JSON/CSV export.** `toPlainRecord` and `buildOutputSchema` exist and are unused.
+- **File export.** The Result tab shows the JSON and copies it to the clipboard; there is
+  no JSON or CSV download. `buildOutputSchema` exists and is unused.
 - **Entailment checking.** See *What this does not prove* above.
 
 ## License
