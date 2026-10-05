@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { isOwner } from "./analytics";
 import { SchemaBuilder } from "./schema-builder";
-import { JsonView, ResultsTable, StatsBar, StatusChip } from "./results-table";
+import { JsonView, ResultsTable, StatsBar, StatusChip, formatValue } from "./results-table";
 import { SourceView } from "./source-view";
 import { DEFAULT_SAMPLE, SAMPLES } from "@/lib/samples";
 import { DEMO_MODEL, MAX_TEXT_CHARS, toPlainRecord, type Cell } from "@/lib/extract";
@@ -30,6 +30,9 @@ export function Extractor() {
   const [resultView, setResultView] = useState<"table" | "json">("table");
   const [copied, setCopied] = useState(false);
   const sidePane = useRef<HTMLDivElement>(null);
+  // Below lg only one pane fits, so the workspace shows the document or the schema/result
+  // panel, never both. Desktop renders both and ignores this.
+  const [phonePane, setPhonePane] = useState<"document" | "side">("document");
   // Hover is a preview, a click pins. Pin wins so the highlight survives moving the mouse
   // away from the row to look at the document.
   const [hoverKey, setHoverKey] = useState<string | null>(null);
@@ -66,6 +69,7 @@ export function Extractor() {
     setHoverKey(null);
     setRun({ status: "running" });
     setTab("result");
+    setPhonePane("side");
     try {
       const res = await fetch("/api/extract", {
         method: "POST",
@@ -138,6 +142,15 @@ export function Extractor() {
     setPinnedKey(key);
     if (key) setTab("result");
   };
+  // On a phone, tapping a row flips to the document at its source. The reverse does not
+  // flip: tapping a highlight keeps you reading, and a strip above the document footer
+  // says which field it is.
+  const pinFromRow = (key: string | null) => {
+    setPinnedKey(key);
+    if (key) setPhonePane("document");
+  };
+  const pinnedCell = pinnedKey && done ? done.cells.find((c) => c.key === pinnedKey) : undefined;
+  const pinnedLabel = pinnedKey ? fields.find((f) => f.key === pinnedKey)?.label || pinnedKey : "";
   const step = (delta: 1 | -1) => {
     if (order.length === 0) return;
     const next =
@@ -165,6 +178,9 @@ export function Extractor() {
     (active
       ? "border-ink bg-ink text-paper"
       : "border-rule text-ink-2 hover:border-ink hover:text-ink");
+  const phoneTab = (active: boolean) =>
+    "min-h-11 flex-1 border px-2 text-sm transition-colors " +
+    (active ? "border-ink bg-ink text-paper" : "border-rule text-ink-2");
   const stepButton =
     "flex h-11 w-11 items-center justify-center rounded text-ink-2 hover:bg-raise hover:text-ink";
 
@@ -178,18 +194,56 @@ export function Extractor() {
   return (
     <section
       id="workspace"
-      className="mx-auto w-full max-w-[1320px] scroll-mt-6 px-4 pb-10 lg:px-6"
+      className="mx-auto w-full max-w-[1320px] scroll-mt-3 px-4 pb-10 lg:scroll-mt-6 lg:px-6"
     >
       {/* On desktop the workspace is one viewport tall and the two panes scroll inside
-          themselves, so the document and the results stay side by side. Below lg they
-          stack and the page scrolls normally. */}
-      <div className="grid gap-4 lg:h-[clamp(560px,calc(100dvh-3rem),900px)] lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
+          themselves, so the document and the results stay side by side. Below lg there is
+          room for one pane, so a switcher picks which, and that pane is sized to the
+          screen and scrolls inside itself the same way. */}
+      <div className="grid gap-2.5 lg:h-[clamp(560px,calc(100dvh-3rem),900px)] lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] lg:gap-4">
+        <div className="flex lg:hidden" role="group" aria-label="Workspace pane">
+          <button
+            type="button"
+            aria-pressed={phonePane === "document"}
+            onClick={() => setPhonePane("document")}
+            className={`${phoneTab(phonePane === "document")} rounded-l`}
+          >
+            Document
+          </button>
+          <button
+            type="button"
+            aria-pressed={phonePane === "side" && tab === "schema"}
+            onClick={() => {
+              setPhonePane("side");
+              setTab("schema");
+            }}
+            className={`${phoneTab(phonePane === "side" && tab === "schema")} -ml-px`}
+          >
+            Schema <span className="eyebrow ml-1">{fields.length}</span>
+          </button>
+          <button
+            type="button"
+            aria-pressed={phonePane === "side" && tab === "result"}
+            onClick={() => {
+              setPhonePane("side");
+              setTab("result");
+            }}
+            className={`${phoneTab(phonePane === "side" && tab === "result")} -ml-px rounded-r`}
+          >
+            Result
+          </button>
+        </div>
+
         {/* Source pane. Editable until a run lands, then swaps to the cited view so the
             highlights sit on the exact string the model saw. */}
-        <section className="panel flex h-[70dvh] min-h-[420px] flex-col overflow-hidden lg:h-auto lg:min-h-0">
+        <section
+          className={`panel ${
+            phonePane === "document" ? "flex" : "hidden"
+          } h-[calc(100dvh-5.5rem)] min-h-[420px] flex-col overflow-hidden lg:flex lg:h-auto lg:min-h-0`}
+        >
           <header className="shrink-0 border-b border-rule px-2 py-2">
             <h2 className="sr-only">Document</h2>
-            <div className="flex flex-wrap gap-0.5">
+            <div className="flex gap-0.5 overflow-x-auto lg:flex-wrap lg:overflow-visible">
               {SAMPLES.map((s) => (
                 <button
                   key={s.id}
@@ -248,6 +302,14 @@ export function Extractor() {
             />
           )}
 
+          {pinnedCell && numbers.has(pinnedCell.key) && (
+            <p className="flex shrink-0 items-baseline gap-2 border-t border-rule bg-raise px-4 py-2.5 text-[13px] lg:hidden">
+              <span className="cite-tag">{numbers.get(pinnedCell.key)}</span>
+              <span className="shrink-0 font-medium">{pinnedLabel}</span>
+              <span className="min-w-0 truncate font-mono">{formatValue(pinnedCell.value)}</span>
+            </p>
+          )}
+
           <footer className="flex min-h-[52px] shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-rule py-1.5 pr-3 pl-4">
             {showCited && order.length > 0 ? (
               <div className="-ml-3 flex items-center gap-0.5">
@@ -304,6 +366,16 @@ export function Extractor() {
                   : `${text.length.toLocaleString()} / ${MAX_TEXT_CHARS.toLocaleString()} chars`}
               </span>
             )}
+            {!showCited && (
+              <button
+                type="button"
+                onClick={extract}
+                disabled={!canRun}
+                className="flex min-h-10 items-center gap-2 rounded bg-ink px-4 text-sm font-medium text-paper hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-40 lg:hidden"
+              >
+                {run.status === "running" ? "Extracting…" : "Extract"}
+              </button>
+            )}
             {showCited && (
               <button
                 type="button"
@@ -321,11 +393,15 @@ export function Extractor() {
 
         {/* Schema + result pane. One panel, two tabs, with the action bar pinned to the
             bottom so Extract is reachable however long the schema gets. */}
-        <section className="panel flex flex-col overflow-hidden lg:min-h-0">
+        <section
+          className={`panel ${
+            phonePane === "side" ? "flex" : "hidden"
+          } h-[calc(100dvh-5.5rem)] min-h-[420px] flex-col overflow-hidden lg:flex lg:h-auto lg:min-h-0`}
+        >
           <div
             role="tablist"
             aria-label="Schema and result"
-            className="flex shrink-0 flex-wrap items-center gap-x-5 border-b border-rule px-4"
+            className="hidden shrink-0 flex-wrap items-center gap-x-5 border-b border-rule px-4 lg:flex"
           >
             <button
               type="button"
@@ -361,7 +437,7 @@ export function Extractor() {
             )}
           </div>
 
-          <div ref={sidePane} className="px-4 pt-1 pb-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+          <div ref={sidePane} className="min-h-0 flex-1 overflow-y-auto px-4 pt-1 pb-4">
             {tab === "schema" && (
               <div role="tabpanel" id="panel-schema" aria-labelledby="tab-schema">
                 <SchemaBuilder
@@ -470,8 +546,9 @@ export function Extractor() {
                         activeKey={activeKey}
                         pinnedKey={pinnedKey}
                         onHoverKey={setHoverKey}
-                        onSelectKey={setPinnedKey}
+                        onSelectKey={pinFromRow}
                         scrollPane={sidePane}
+                        shown={phonePane === "side"}
                       />
                     ) : (
                       <JsonView
@@ -480,8 +557,9 @@ export function Extractor() {
                         activeKey={activeKey}
                         pinnedKey={pinnedKey}
                         onHoverKey={setHoverKey}
-                        onSelectKey={setPinnedKey}
+                        onSelectKey={pinFromRow}
                         scrollPane={sidePane}
+                        shown={phonePane === "side"}
                       />
                     )}
                   </>

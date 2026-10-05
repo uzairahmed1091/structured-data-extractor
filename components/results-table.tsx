@@ -27,7 +27,7 @@ const TYPE_SHORT: Record<FieldType, string> = {
   string_list: "List",
 };
 
-function formatValue(value: unknown): string {
+export function formatValue(value: unknown): string {
   if (Array.isArray(value)) return value.join(", ");
   if (typeof value === "boolean") return value ? "yes" : "no";
   return String(value);
@@ -57,6 +57,11 @@ type LinkedProps = {
   onSelectKey: (key: string | null) => void;
   /** The pane these rows scroll inside. */
   scrollPane: RefObject<HTMLElement | null>;
+  /**
+   * Whether that pane is on screen. On a phone only one pane shows at a time, so a pin made
+   * while this one was hidden has to be caught up on when it comes back.
+   */
+  shown: boolean;
 };
 
 /**
@@ -64,12 +69,16 @@ type LinkedProps = {
  * pinned; this scrolls the row into view when the pin came from the document or the
  * stepper. Returns a ref callback to hang on each row.
  */
-function usePinnedRow(pinnedKey: string | null, scrollPane: RefObject<HTMLElement | null>) {
+function usePinnedRow(
+  pinnedKey: string | null,
+  scrollPane: RefObject<HTMLElement | null>,
+  shown: boolean,
+) {
   const rows = useRef(new Map<string, HTMLElement>());
 
   useEffect(() => {
-    if (pinnedKey) scrollPaneTo(scrollPane.current, rows.current.get(pinnedKey));
-  }, [pinnedKey, scrollPane]);
+    if (pinnedKey && shown) scrollPaneTo(scrollPane.current, rows.current.get(pinnedKey));
+  }, [pinnedKey, scrollPane, shown]);
 
   return (key: string) => (el: HTMLElement | null) => {
     if (el) rows.current.set(key, el);
@@ -86,9 +95,10 @@ export function ResultsTable({
   onHoverKey,
   onSelectKey,
   scrollPane,
+  shown,
 }: LinkedProps & { fields: FieldSpec[] }) {
   const specs = new Map(fields.map((f) => [f.key, f]));
-  const rowRef = usePinnedRow(pinnedKey, scrollPane);
+  const rowRef = usePinnedRow(pinnedKey, scrollPane, shown);
 
   return (
     <ul data-results className="flex flex-col">
@@ -213,8 +223,9 @@ export function JsonView({
   onHoverKey,
   onSelectKey,
   scrollPane,
+  shown,
 }: LinkedProps) {
-  const rowRef = usePinnedRow(pinnedKey, scrollPane);
+  const rowRef = usePinnedRow(pinnedKey, scrollPane, shown);
   const lineBase = "flex w-full items-baseline gap-2 rounded border px-2.5 py-[3px] text-left";
 
   return (
