@@ -1,8 +1,8 @@
 # Cited Extract
 
-Define a schema, paste a document, get back typed and validated JSON where **every value
-carries a citation to the exact span it came from**, and **fields the document doesn't
-contain come back `null`** rather than a plausible guess.
+Define a schema, paste a document or drop in a PDF, get back typed and validated JSON where
+**every value carries a citation to the exact span it came from**, and **fields the
+document doesn't contain come back `null`** rather than a plausible guess.
 
 **[Live demo](https://structured-data-extractor.vercel.app/)** · runs on `gpt-4o-mini`,
 no sign-up. The preloaded sample documents are served from cache and cost nothing; running
@@ -114,6 +114,22 @@ Usage is counted, not tracked. Each extraction attempt writes one row saying whi
 (or "own document") was run and how it ended — no content, no IP, no visitor identifier.
 Page views use Vercel's cookieless analytics.
 
+## PDFs
+
+A PDF is read in the browser (`lib/pdf.ts`, on pdf.js) and becomes the same plain string a
+paste would be. The file itself is never uploaded — only its text is posted, and it lands
+in the editor first, so you can see exactly what the model will be given. Citations
+highlight in that extracted text, not on a rendering of the page.
+
+- **Text layer only.** A scan is a picture of a page. It is refused with a message saying
+  so, rather than returned as an empty document that reports every field as not found.
+- **Reading stops at 60,000 characters,** and the UI says which page it stopped on. A
+  silently truncated document would make "not found" mean "not read".
+- **Text is taken in drawing order.** That keeps side-by-side columns from being merged
+  line by line, at the cost of trusting the order the PDF was written in.
+- Lines the PDF broke at the right margin are rejoined and wide gaps in table rows are
+  kept as runs of spaces. Neither can move a citation: quote matching collapses whitespace.
+
 ## Setup
 
 ```bash
@@ -133,14 +149,15 @@ key is the anon role and cannot bypass RLS, which fails silently rather than lou
 ## Stack
 
 Next.js 16 (App Router) · TypeScript · Tailwind v4 · Zod 4 · OpenAI structured outputs ·
-Supabase · Upstash · Vercel
+pdf.js · Supabase · Upstash · Vercel
 
 ## Not built
 
 Honest list, rather than a roadmap that ages badly:
 
-- **PDF upload.** Text paste only for now. `lib/locate.ts` already normalizes the things a
-  PDF text layer does to a quote, but nothing extracts the text yet.
+- **OCR, and highlights on the page itself.** PDFs are read from their text layer and cited
+  in the extracted text. Scanned PDFs are refused, and nothing is drawn on a rendering of
+  the original page.
 - **File export.** The Result tab shows the JSON and copies it to the clipboard; there is
   no JSON or CSV download. `buildOutputSchema` exists and is unused.
 - **Entailment checking.** See *What this does not prove* above.

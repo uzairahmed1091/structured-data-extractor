@@ -56,9 +56,10 @@ export default function Home() {
             </span>
           </h1>
           <p className="max-w-[520px] text-[17px] leading-relaxed text-ink-2">
-            Define a schema, paste a document, and get validated JSON where every value
-            cites the exact span it came from. Fields the document doesn&apos;t contain come
-            back <span className="font-mono text-ink">null</span>, never a plausible guess.
+            Define a schema, paste a document or drop in a PDF, and get validated JSON
+            where every value cites the exact span it came from. Fields the document
+            doesn&apos;t contain come back <span className="font-mono text-ink">null</span>,
+            never a plausible guess.
           </p>
           <div className="flex flex-wrap items-center gap-2.5">
             <a

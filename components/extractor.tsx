@@ -8,6 +8,7 @@ import { SourceView } from "./source-view";
 import { DEFAULT_SAMPLE, SAMPLES } from "@/lib/samples";
 import { DEMO_MODEL, MAX_TEXT_CHARS, toPlainRecord, type Cell } from "@/lib/extract";
 import { citationOrder, type Span } from "@/lib/locate";
+import { PdfError, readPdf } from "@/lib/pdf";
 import type { FieldSpec } from "@/lib/schema";
 
 type RunState =
@@ -15,6 +16,13 @@ type RunState =
   | { status: "running" }
   | { status: "error"; message: string }
   | { status: "done"; cells: Cell[]; cached: boolean; model: string; durationMs: number };
+
+/** Where the document came from, when it came from a file rather than a sample or a paste. */
+type PdfState =
+  | { status: "none" }
+  | { status: "reading"; name: string }
+  | { status: "error"; message: string }
+  | { status: "loaded"; name: string; pages: number; pagesRead: number; truncated: boolean };
 
 export function Extractor() {
   const [sampleId, setSampleId] = useState<string | null>(DEFAULT_SAMPLE.id);
@@ -46,6 +54,12 @@ export function Extractor() {
    */
   const [extractedText, setExtractedText] = useState("");
 
+  const [pdf, setPdf] = useState<PdfState>({ status: "none" });
+  const [dragging, setDragging] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  // Only the most recent file may land: a slow first read must not overwrite a second.
+  const pdfRead = useRef(0);
+
   const reset = () => {
     setRun({ status: "idle" });
     setPinnedKey(null);
@@ -59,8 +73,44 @@ export function Extractor() {
     setText(sample.text);
     setFields(sample.fields);
     setTab("schema");
+    pdfRead.current++; // a file still being read no longer gets to replace this
+    setPdf({ status: "none" });
     reset();
   };
+
+  /**
+   * A PDF is read here in the browser and becomes the editor's text, so what gets
+   * extracted from — and cited into — is the string on screen, the same as a paste. A
+   * file that can't be read leaves the current document alone.
+   */
+  const loadPdf = async (file: File) => {
+    const id = ++pdfRead.current;
+    setPdf({ status: "reading", name: file.name });
+    try {
+      const result = await readPdf(file);
+      if (id !== pdfRead.current) return;
+      setSampleId(null);
+      setText(result.text);
+      setTab("schema");
+      setPhonePane("document");
+      reset();
+      setPdf({
+        status: "loaded",
+        name: file.name,
+        pages: result.pages,
+        pagesRead: result.pagesRead,
+        truncated: result.truncated,
+      });
+    } catch (err) {
+      if (id !== pdfRead.current) return;
+      setPdf({
+        status: "error",
+        message: err instanceof PdfError ? err.message : "That PDF couldn't be read.",
+      });
+    }
+  };
+  const busy = run.status === "running" || pdf.status === "reading";
+  const hasFiles = (e: React.DragEvent) => e.dataTransfer.types.includes("Files");
 
   const extract = async () => {
     const submitted = text;
@@ -113,8 +163,7 @@ export function Extractor() {
     }
   };
 
-  const canRun =
-    run.status !== "running" && text.trim().length > 0 && fields.some((f) => f.label);
+  const canRun = !busy && text.trim().length > 0 && fields.some((f) => f.label);
 
   const done = run.status === "done" ? run : null;
   const showCited = done !== null;
@@ -237,13 +286,39 @@ export function Extractor() {
         {/* Source pane. Editable until a run lands, then swaps to the cited view so the
             highlights sit on the exact string the model saw. */}
         <section
-          className={`panel ${
+          onDragOver={(e) => {
+            if (!hasFiles(e)) return;
+            e.preventDefault();
+            if (!busy) setDragging(true);
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+          }}
+          onDrop={(e) => {
+            if (!hasFiles(e)) return;
+            // Always claimed, or the browser navigates away to the dropped file.
+            e.preventDefault();
+            setDragging(false);
+            const file = e.dataTransfer.files[0];
+            if (file && !busy) loadPdf(file);
+          }}
+          className={`panel relative ${
             phonePane === "document" ? "flex" : "hidden"
           } h-[calc(100dvh-5.5rem)] min-h-[420px] flex-col overflow-hidden lg:flex lg:h-auto lg:min-h-0`}
         >
-          <header className="shrink-0 border-b border-rule px-2 py-2">
+          {dragging && (
+            <div
+              className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-md border-2 border-dashed border-ink bg-paper/90 text-[15px] font-medium tracking-tight"
+              aria-hidden="true"
+            >
+              Drop a PDF to read its text
+            </div>
+          )}
+          {/* The samples scroll sideways on a phone; the upload button sits outside that
+              row so it is on screen without scrolling to find it. */}
+          <header className="flex shrink-0 items-start gap-2 border-b border-rule px-2 py-2">
             <h2 className="sr-only">Document</h2>
-            <div className="flex gap-0.5 overflow-x-auto lg:flex-wrap lg:overflow-visible">
+            <div className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto lg:flex-wrap lg:overflow-visible">
               {SAMPLES.map((s) => (
                 <button
                   key={s.id}
@@ -268,11 +343,82 @@ export function Extractor() {
                 Your text
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => fileInput.current?.click()}
+              disabled={busy}
+              aria-label="Upload PDF"
+              className="flex min-h-9 shrink-0 items-center gap-1.5 rounded border border-rule px-3 text-[13px] whitespace-nowrap hover:border-ink disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <svg
+                viewBox="0 0 16 16"
+                width="13"
+                height="13"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M8 10.5V2.5M4.75 5.5L8 2.25l3.25 3.25M2.5 10.5v2a1 1 0 001 1h9a1 1 0 001-1v-2" />
+              </svg>
+              <span className="sm:hidden">PDF</span>
+              <span className="hidden sm:inline">Upload PDF</span>
+            </button>
+            <input
+              ref={fileInput}
+              type="file"
+              accept="application/pdf,.pdf"
+              className="sr-only"
+              tabIndex={-1}
+              aria-hidden="true"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                // Cleared so choosing the same file again still fires a change.
+                e.target.value = "";
+                if (file) loadPdf(file);
+              }}
+            />
           </header>
 
           {sample && (
             <p className="shrink-0 border-b border-rule bg-raise px-4 py-2.5 text-[13px] text-ink-2">
               {sample.note}
+            </p>
+          )}
+
+          {pdf.status === "reading" && (
+            <p
+              role="status"
+              className="shrink-0 border-b border-rule bg-raise px-4 py-2.5 text-[13px] text-ink-2"
+            >
+              Reading {pdf.name}…
+            </p>
+          )}
+          {pdf.status === "error" && (
+            <p
+              role="alert"
+              className="shrink-0 border-b border-rule bg-raise px-4 py-2.5 text-[13px] text-flag"
+            >
+              {pdf.message}
+            </p>
+          )}
+          {pdf.status === "loaded" && (
+            <p
+              data-pdf-note
+              className="shrink-0 border-b border-rule bg-raise px-4 py-2.5 text-[13px] text-ink-2"
+            >
+              <span className="font-medium text-ink">{pdf.name}</span> · {pdf.pages}{" "}
+              {pdf.pages === 1 ? "page" : "pages"}. Read in your browser — only this text is
+              sent for extraction, not the file.
+              {pdf.truncated && (
+                <span className="mt-1 block text-flag">
+                  Only the first {MAX_TEXT_CHARS.toLocaleString()} characters fit (through page{" "}
+                  {pdf.pagesRead} of {pdf.pages}). Anything after that was not read, so a field
+                  that lives there will come back not found.
+                </span>
+              )}
             </p>
           )}
 
@@ -294,10 +440,13 @@ export function Extractor() {
               onChange={(e) => {
                 setText(e.target.value);
                 setSampleId(null);
+                // The file note describes this text. Once it is emptied, or after a failed
+                // read, the note no longer describes anything.
+                if (e.target.value === "" || pdf.status === "error") setPdf({ status: "none" });
                 reset();
               }}
               spellCheck={false}
-              placeholder="Paste a contract, invoice, report — anything with facts in it."
+              placeholder="Paste a contract, invoice, report — or drop a PDF here."
               className="min-h-0 flex-1 resize-none bg-transparent px-5 py-5 font-mono text-[12.5px] leading-[1.75] text-ink placeholder:text-ink-3 focus:outline-none"
             />
           )}

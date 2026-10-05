@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useState } from "react";
 import { FIELD_TYPES, MAX_FIELDS, type FieldSpec, type FieldType } from "@/lib/schema";
 
 const TYPE_LABELS: Record<FieldType, string> = {
@@ -59,20 +59,71 @@ export function SchemaBuilder({
 }) {
   const uid = useId();
 
+  /**
+   * Clearing is one click and wipes work, so it can be taken back. The offer stands only
+   * while the list is still the exact blank this component produced: any edit, or the
+   * parent loading a different schema, replaces that array and the offer goes with it.
+   */
+  const [cleared, setCleared] = useState<{ before: FieldSpec[]; blank: FieldSpec[] } | null>(
+    null,
+  );
+  const canUndo = cleared !== null && cleared.blank === fields;
+
   const update = (i: number, patch: Partial<FieldSpec>) => {
     onChange(fields.map((f, idx) => (idx === i ? { ...f, ...patch } : f)));
   };
 
   const usedKeys = new Set(fields.map((f) => f.key));
   const atMax = fields.length >= MAX_FIELDS;
+  const isBlank =
+    fields.length === 1 &&
+    !fields[0].label &&
+    !fields[0].description &&
+    fields[0].type === "string";
 
   const addField = () => {
     if (atMax) return;
     onChange([...fields, blankField(fields.length)]);
   };
 
+  const clearAll = () => {
+    const blank = [blankField(0)];
+    setCleared({ before: fields, blank });
+    onChange(blank);
+  };
+  const undoClear = () => {
+    if (!cleared) return;
+    onChange(cleared.before);
+    setCleared(null);
+  };
+
   return (
     <div>
+      <div className="flex items-center justify-between gap-3 border-b border-rule">
+        <span className={`eyebrow ${atMax ? "text-warn" : "text-ink-3"}`}>
+          {fields.length} / {MAX_FIELDS} fields
+        </span>
+        {canUndo ? (
+          <button
+            type="button"
+            onClick={undoClear}
+            disabled={disabled}
+            className="-mr-2 min-h-11 px-2 text-[13px] text-ink underline underline-offset-[3px] disabled:opacity-40"
+          >
+            Undo clear
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={clearAll}
+            disabled={disabled || isBlank}
+            className="-mr-2 min-h-11 px-2 text-[13px] text-ink-2 underline underline-offset-[3px] hover:text-ink disabled:no-underline disabled:opacity-40 disabled:hover:text-ink-2"
+          >
+            Clear all
+          </button>
+        )}
+      </div>
+
       <ul className="divide-y divide-rule">
         {fields.map((field, i) => {
           const nameId = `${uid}-name-${i}`;
@@ -89,14 +140,15 @@ export function SchemaBuilder({
 
               <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                 {/* The name is the primary input: it takes the row's remaining width and
-                    the heavier face. min-w-0 is what stops the select from crushing it. */}
-                <div className="flex gap-2">
+                    the heavier face. min-w-0 is what stops the select from crushing it.
+                    On a phone there is no width to share, so the type drops underneath. */}
+                <div className="flex flex-col gap-1.5 sm:flex-row sm:gap-2">
                   <label htmlFor={nameId} className="sr-only">
                     Field {i + 1} name
                   </label>
                   <input
                     id={nameId}
-                    className={`${controlClass} min-w-0 flex-1 font-medium`}
+                    className={`${controlClass} w-full min-w-0 font-medium sm:w-auto sm:flex-1`}
                     value={field.label}
                     disabled={disabled}
                     placeholder="Field name, e.g. Invoice total"
@@ -117,7 +169,7 @@ export function SchemaBuilder({
                   </label>
                   <select
                     id={typeId}
-                    className={`${controlClass} w-32 shrink-0 text-ink-2`}
+                    className={`${controlClass} w-full shrink-0 text-ink-2 sm:w-32`}
                     value={field.type}
                     disabled={disabled}
                     onChange={(e) => {

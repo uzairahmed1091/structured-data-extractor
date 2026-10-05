@@ -14,10 +14,20 @@
  *   GIF_WIDTH    output width in px     (default: 800)
  *   GIF_FPS      frames per second      (default: 10)
  *   GIF_COLORS   palette size           (default: 48)
+ *   DEMO_PDF     set to 0 to skip the PDF opening and record the cached sample instead
  *   REAL_RUN     JSON {cells:[...]} — when set, /api/extract is answered from this
  *                instead of being called. For recording somewhere the deployment is
  *                unreachable; pass a row from the extraction_runs table so the frames
- *                still show real model output.
+ *                still show real model output. Its spans index the sample's own text,
+ *                so this also skips the PDF opening.
+ *
+ * What gets recorded, in order: the pitch, a PDF going in, the extraction, a result row
+ * pinning its source, a highlight pinning its row, the stepper walking citations, the
+ * field that comes back null, and the same result as JSON.
+ *
+ * The PDF opening sends the document as the visitor's own text, so that one extraction is
+ * a real, uncached call on the shared demo key — a few seconds on camera and one run
+ * against the hourly limit.
  */
 
 import { chromium } from "playwright";
@@ -31,6 +41,9 @@ const URL = process.env.DEMO_URL ?? "https://structured-data-extractor.vercel.ap
 const WIDTH = Number(process.env.GIF_WIDTH ?? 800);
 const FPS = Number(process.env.GIF_FPS ?? 10);
 const COLORS = Number(process.env.GIF_COLORS ?? 48);
+
+// The replayed spans belong to the sample text, not to text read back out of a PDF.
+const WITH_PDF = process.env.DEMO_PDF !== "0" && !process.env.REAL_RUN;
 
 const OUT_DIR = "docs";
 const GIF = path.join(OUT_DIR, "demo.gif");
@@ -162,12 +175,48 @@ console.log({
   WIDTH,
   FPS,
   COLORS,
+  WITH_PDF,
   CHROME_PATH: process.env.CHROME_PATH,
   REAL_RUN: process.env.REAL_RUN
 });
 
+/**
+ * Glide to a cited span in the document. A span that wraps is an inline box whose
+ * bounding-box centre can fall outside the text, so aim at its first line instead.
+ */
+async function glideToSpan(locator, { steps = 22 } = {}) {
+  await smoothScrollIntoView(locator);
+  const point = await locator.evaluate((el) => {
+    const first = el.getClientRects()[0];
+    return { x: first.left + Math.min(first.width / 2, 60), y: first.top + first.height / 2 };
+  });
+  await page.mouse.move(point.x, point.y, { steps });
+  return point;
+}
+
+/**
+ * The sample contract as a PDF, made here so the recording needs no fixture file. It is
+ * printed by a second, unrecorded browser context and handed to the page's real file
+ * input, so what the frames show is the app reading an actual PDF.
+ */
+async function sampleAsPdf(text) {
+  const printer = await browser.newContext();
+  const sheet = await printer.newPage();
+  const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  await sheet.setContent(
+    `<pre style="margin:0;font:9pt/1.5 'Courier New',monospace;white-space:pre-wrap">${escaped}</pre>`,
+  );
+  const buffer = await sheet.pdf({
+    format: "Letter",
+    margin: { top: "1in", right: "1in", bottom: "1in", left: "1in" },
+  });
+  await printer.close();
+  return buffer;
+}
+
 await page.goto(URL, { waitUntil: "networkidle" });
 await page.mouse.move(640, 700);
+const pdf = WITH_PDF ? await sampleAsPdf(await page.locator("textarea").inputValue()) : null;
 await wait(1400);
 
 // The page opens on the pitch. Hold it for a beat, then bring the tool up so it fills
@@ -175,30 +224,79 @@ await wait(1400);
 await smoothScrollIntoView(page.locator("#workspace"), { duration: 800 });
 await wait(700);
 
-// 1. Run the extraction. The right pane switches to the Result tab by itself, so the
+// 1. A PDF goes in. The schema stays as it is; only the document changes.
+if (pdf) {
+  const upload = page.getByRole("button", { name: "Upload PDF" });
+  await glideTo(upload);
+  await wait(400);
+  const chooser = page.waitForEvent("filechooser");
+  await upload.click();
+  await (await chooser).setFiles({
+    name: "services-agreement.pdf",
+    mimeType: "application/pdf",
+    buffer: pdf,
+  });
+  await page.locator("[data-pdf-note]").waitFor({ timeout: 30000 });
+  await wait(1700);
+}
+
+// 2. Run the extraction. The right pane switches to the Result tab by itself, so the
 // payoff frame — highlights on the left beside the cited values on the right — arrives
 // without any scrolling.
 const extract = page.getByRole("button", { name: "Extract", exact: true });
 await glideTo(extract);
 await wait(500);
 await extract.click();
-await page.getByText("cited spans").waitFor({ timeout: 60000 });
-await wait(1600);
+await page.locator("ul[data-results]").waitFor({ timeout: 60000 });
+await wait(1500);
 
-// 2. Click two cited fields — the highlight pins and the document scrolls to it.
+// Every step below names a field. On a live run a field can come back not found, and a
+// row with nothing to cite is not a button — so each step is skipped rather than failed.
 const rows = page.locator("ul[data-results] li button");
-for (const name of ["Total fee (USD)", "Governing law"]) {
-  const row = rows.filter({ hasText: name }).first();
-  await glideTo(row);
-  await wait(900);            // hover preview
-  await row.click();
-  await wait(2000);           // pinned highlight
+const row = (name) => rows.filter({ hasText: name }).first();
+const span = (key) => page.locator(`mark.cite[aria-label$=" for ${key}"]`).first();
+const exists = async (locator) => (await locator.count()) > 0;
+
+// 3. Click a cited field — it pins, and the document scrolls to its numbered highlight.
+if (await exists(row("Total fee (USD)"))) {
+  await glideTo(row("Total fee (USD)"));
+  await wait(700);           // hover preview
+  await row("Total fee (USD)").click();
+  await wait(1700);          // pinned highlight
 }
 
-// 3. Rest on the field the document does not contain.
+// 4. The link runs the other way too: click a highlight and the result list scrolls to
+// the row it belongs to.
+if (await exists(span("auto_renews"))) {
+  const point = await glideToSpan(span("auto_renews"));
+  await wait(500);
+  await page.mouse.click(point.x, point.y);
+  await wait(1800);
+}
+
+// 5. Step through the citations in reading order. Both panes follow.
+const next = page.getByRole("button", { name: "Next citation" });
+if (await exists(next)) {
+  await glideTo(next);
+  await wait(300);
+  for (let i = 0; i < 2; i++) {
+    await next.click();
+    await wait(1200);
+  }
+}
+
+// 6. Rest on the field the document does not contain.
 const nullRow = page.locator("ul[data-results] li").filter({ hasText: "Termination notice" }).first();
 await glideTo(nullRow);
-await wait(2600);
+await wait(2200);
+
+// 7. The same result as the JSON a caller would get.
+const json = page.getByRole("button", { name: "JSON", exact: true });
+await glideTo(json);
+await wait(400);
+await json.click();
+await page.mouse.move(640, 760, { steps: 14 });
+await wait(2400);
 
 await wait(600);
 await page.close();          // the video is only flushed once the page closes

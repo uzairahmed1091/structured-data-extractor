@@ -9,7 +9,7 @@ import "./globals.css";
 
 const title = "Cited Extract — typed JSON from documents, with receipts";
 const description =
-  "Define a schema, paste a document, get validated JSON where every value cites the exact span it came from and missing fields come back null.";
+  "Define a schema, paste a document or drop in a PDF, get validated JSON where every value cites the exact span it came from and missing fields come back null.";
 
 export const metadata: Metadata = {
   // Makes the link-preview image URL absolute. The image itself is app/opengraph-image.png,
